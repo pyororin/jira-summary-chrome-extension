@@ -2,14 +2,21 @@
   "manifest_version": 3,
   "name": "JIRA Summary Viewer",
   "version": "1.0",
-  "description": "Fetches and displays JIRA issue summaries.",
+  "description": "Fetches and displays JIRA issue summaries directly on the page.",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
     "http://localhost:8080/hoge-be/*"
   ],
-  "action": {
-    "default_popup": "popup.html"
-  }
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://jira.example-hub.com/browse/*"],
+      "js": ["content.js"],
+      "css": ["style.css"]
+    }
+  ]
 }
