@@ -60,3 +60,7 @@
   line-height: 1.5;
   /* font-family is inherited, so no specific rule here */
 }
+
+#jiraSummaryDisplay strong {
+  font-weight: bold;
+}

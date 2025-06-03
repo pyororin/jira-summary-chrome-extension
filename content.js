@@ -4,17 +4,57 @@ const BUTTON_ID = 'jiraSummaryExtensionButton';
 let messageAreaContainer = null; // Will hold the div inside ROOT_DISPLAY_CONTAINER_ID
 
 // --- Utility Functions (typeWriterEffect, getJiraKey) ---
-function typeWriterEffect(text, element, delay = 10) {
-  let i = 0;
-  element.textContent = '';
-  function type() {
-    if (i < text.length) {
-      element.textContent += text.charAt(i);
-      i++;
-      setTimeout(type, delay);
+function typeWriterEffect(text, element, delay = 10) { // delay is already 10ms from previous change
+  element.innerHTML = ''; // Clear content before typing
+  const lines = text.split('\n'); // Split text into lines based on literal \n (corrected from prompt to use literal \n for now)
+  let lineIndex = 0;
+  let charIndex = 0;
+  let currentLineStrongWrapper = null; // To hold the <strong> element for the current heading line
+
+  function typeCharacter() {
+    if (lineIndex >= lines.length) {
+      return; // All lines processed
+    }
+
+    let currentLineText = lines[lineIndex];
+
+    if (charIndex === 0) { // Processing the start of a new line
+      if (lineIndex > 0) { // Add <br> before starting a new line, if it's not the very first line
+        element.appendChild(document.createElement('br'));
+      }
+      // Check if the current line is a heading
+      if (currentLineText.startsWith('- ')) {
+        currentLineStrongWrapper = document.createElement('strong');
+        element.appendChild(currentLineStrongWrapper);
+      } else {
+        currentLineStrongWrapper = null; // Not a heading line, subsequent characters append directly to `element`
+      }
+    }
+
+    // Type the next character of the current line
+    if (charIndex < currentLineText.length) {
+      const char = currentLineText.charAt(charIndex);
+      const textNode = document.createTextNode(char);
+
+      if (currentLineStrongWrapper) {
+        // If it's a heading line, append character to the <strong> wrapper
+        currentLineStrongWrapper.appendChild(textNode);
+      } else {
+        // Otherwise, append character directly to the main display element
+        element.appendChild(textNode);
+      }
+
+      charIndex++;
+      setTimeout(typeCharacter, delay);
+    } else { // Reached the end of the current line
+      lineIndex++; // Move to the next line
+      charIndex = 0; // Reset character index for the new line
+      currentLineStrongWrapper = null; // Reset strong wrapper for the new line
+
+      setTimeout(typeCharacter, delay);
     }
   }
-  type();
+  typeCharacter(); // Start the typing process
 }
 
 function getJiraKey() {
