@@ -1,0 +1,39 @@
+body {
+  font-family: sans-serif;
+  width: 300px; /* Adjust width as needed */
+  padding: 10px;
+}
+
+div {
+  margin-bottom: 10px;
+}
+
+label {
+  margin-right: 5px;
+}
+
+input[type="text"] {
+  width: calc(100% - 70px); /* Adjust based on label and button */
+  padding: 5px;
+  margin-bottom: 5px; /* Add some space below input */
+}
+
+button {
+  padding: 8px 15px;
+  cursor: pointer;
+}
+
+#loadingMessage {
+  color: #555;
+  font-style: italic;
+  margin-top: 10px;
+}
+
+#summaryDisplay {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #ddd;
+  min-height: 50px;
+  white-space: pre-wrap; /* To respect newlines in summary */
+  word-wrap: break-word; /* To break long words */
+}

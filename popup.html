@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>JIRA Summary</title>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div>
+    <label for="jiraKey">JIRA Key:</label>
+    <input type="text" id="jiraKey" name="jiraKey">
+  </div>
+  <button id="getSummaryButton">Get Summary</button>
+  <div id="loadingMessage" style="display: none;">Creating summary...</div>
+  <div id="summaryDisplay"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
