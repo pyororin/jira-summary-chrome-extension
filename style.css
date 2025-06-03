@@ -1,20 +1,29 @@
-/* Reset or clear previous styles if any */
-/* For example, you might have body styles from popup specific CSS */
-/* For content scripts, it's often better to be very specific to avoid conflicts */
+#jiraSummaryExtensionRootContainer {
+  color-scheme: light dark; /* This remains important */
+}
 
 #jiraSummaryExtensionButton {
-  background-color: #0052cc; /* Example blue, similar to Atlassian blue */
+  background-color: #0052cc; /* Fixed button style */
   color: white;
   border: none;
-  padding: 5px 10px;
   text-align: center;
   text-decoration: none;
   display: inline-block;
-  font-size: 13px; /* Adjust to match surrounding UI */
+  font-size: 13px;
   margin-left: 5px;
   margin-right: 5px;
   border-radius: 3px;
   cursor: pointer;
+
+  /* Apply user's values */
+  height: 30px; /* Maintained */
+  padding: 4px 10px; /* UPDATED from user */
+  margin-top: 10px;  /* UPDATED from user (margin: 10px 0 0;) */
+  margin-bottom: 0;  /* Assuming from user (margin: 10px 0 0;) */
+
+  /* Remove or comment out previous attempts for vertical alignment if these new values suffice */
+  /* line-height: 20px; */
+  /* align-self: baseline; */
 }
 
 #jiraSummaryExtensionButton:hover {
@@ -27,28 +36,27 @@
   margin-top: 10px;
   padding: 10px;
   border-radius: 3px;
-  font-size: 14px; /* Adjust as needed */
-  width: auto; /* Let it take available width or set a specific one */
-  /* Ensure it's positioned correctly relative to the target insertion point */
+  font-size: 14px;
+  border: 1px solid ThreeDShadow; /* System color for borders */
 }
 
 #jiraSummaryLoading {
-  background-color: #f0f0f0;
-  border: 1px solid #ddd;
-  color: #333;
+  background-color: Canvas;
+  color: CanvasText;
 }
 
 #jiraSummaryError {
-  background-color: #ffebe6; /* Light red background */
-  border: 1px solid #ff8f73; /* Reddish border */
-  color: #c00; /* Dark red text */
+  background-color: Canvas; /* Or a specific error background if Canvas is not suitable */
+  color: LinkText; /* Using LinkText for errors to make it stand out a bit, could be ErrorText if supported or a fixed color */
+  /* For higher visibility, an explicit border might be better than ThreeDShadow for errors */
+  border-color: LinkText; /* Or a more prominent error border color */
 }
 
 #jiraSummaryDisplay {
-  background-color: #f8f9fa; /* Light grey background */
-  border: 1px solid #ccc;
-  white-space: pre-wrap; /* Preserve whitespace and newlines */
-  word-wrap: break-word; /* Break long words */
-  font-family: monospace; /* Optional: for fixed-width text if summary is code-like */
+  background-color: Canvas;
+  color: CanvasText;
+  white-space: pre-wrap;
+  word-wrap: break-word;
   line-height: 1.5;
+  /* font-family is inherited, so no specific rule here */
 }

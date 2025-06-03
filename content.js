@@ -1,101 +1,12 @@
-// Ensure the DOM is sufficiently loaded, though content scripts often run at document_idle.
-// We'll use a small delay or a specific element check if needed, but start directly for now.
+const ROOT_DISPLAY_CONTAINER_ID = 'jiraSummaryExtensionRootContainer'; // Renamed for clarity
+const BUTTON_ID = 'jiraSummaryExtensionButton';
 
-function createSummaryButton() {
-  const jiraShareTrigger = document.getElementById('jira-share-trigger');
-  if (!jiraShareTrigger || !jiraShareTrigger.parentNode) {
-    console.warn('JIRA Summary Extension: jira-share-trigger element not found or has no parent.');
-    return null;
-  }
+let messageAreaContainer = null; // Will hold the div inside ROOT_DISPLAY_CONTAINER_ID
 
-  const button = document.createElement('button');
-  button.textContent = 'JIRAサマリー表示';
-  button.id = 'jiraSummaryExtensionButton'; // Add an ID for styling/identification
-  button.style.marginLeft = '5px'; // Basic styling, can be moved to CSS
-  button.style.marginRight = '5px';
-
-
-  // Insert before jira-share-trigger
-  jiraShareTrigger.parentNode.insertBefore(button, jiraShareTrigger);
-  return button;
-}
-
-function getJiraKey() {
-  const keyValElement = document.getElementById('key-val');
-  if (!keyValElement) {
-    console.warn('JIRA Summary Extension: key-val element not found.');
-    return null;
-  }
-  // Assuming the key is in textContent, adjust if it's in an attribute like 'value' or 'data-key'
-  return keyValElement.textContent ? keyValElement.textContent.trim() : null;
-}
-
-function getDisplayTargetElement() {
-  const viewIssueSidebar = document.getElementById('viewissuesidebar');
-  if (!viewIssueSidebar) {
-    console.warn('JIRA Summary Extension: viewissuesidebar element not found.');
-    return null;
-  }
-  // Find #slack-viewissue-panel then its second div child
-  const slackPanel = viewIssueSidebar.querySelector('#slack-viewissue-panel');
-  if (!slackPanel) {
-    console.warn('JIRA Summary Extension: slack-viewissue-panel element not found.');
-    return null;
-  }
-  const targetDiv = slackPanel.children[1]; // Assuming div[2] means the second child (index 1)
-  if (!targetDiv) {
-    console.warn('JIRA Summary Extension: Target div (second child of slack-viewissue-panel) not found.');
-    return null;
-  }
-  return targetDiv;
-}
-
-function displayLoading(targetElement) {
-  removeExistingMessages();
-  const loadingDiv = document.createElement('div');
-  loadingDiv.id = 'jiraSummaryLoading';
-  loadingDiv.textContent = 'サマリーを作成しています...';
-  loadingDiv.style.marginTop = '10px'; // Basic styling
-  targetElement.insertAdjacentElement('afterend', loadingDiv);
-  return loadingDiv;
-}
-
-function displaySummary(summaryText, targetElement) {
-  removeExistingMessages(); // Remove loading or previous summary
-  const summaryDiv = document.createElement('div');
-  summaryDiv.id = 'jiraSummaryDisplay';
-  summaryDiv.style.marginTop = '10px';
-  summaryDiv.style.padding = '10px';
-  summaryDiv.style.border = '1px solid #ccc';
-  summaryDiv.style.whiteSpace = 'pre-wrap';
-  summaryDiv.style.wordWrap = 'break-word';
-
-  targetElement.insertAdjacentElement('afterend', summaryDiv);
-  typeWriterEffect(summaryText, summaryDiv);
-}
-
-function displayError(errorMessage, targetElement) {
-  removeExistingMessages();
-  const errorDiv = document.createElement('div');
-  errorDiv.id = 'jiraSummaryError';
-  errorDiv.style.color = 'red';
-  errorDiv.style.marginTop = '10px';
-  errorDiv.textContent = errorMessage;
-  targetElement.insertAdjacentElement('afterend', errorDiv);
-}
-
-function removeExistingMessages() {
-  const loading = document.getElementById('jiraSummaryLoading');
-  if (loading) loading.remove();
-  const summary = document.getElementById('jiraSummaryDisplay');
-  if (summary) summary.remove();
-  const error = document.getElementById('jiraSummaryError');
-  if (error) error.remove();
-}
-
-function typeWriterEffect(text, element, delay = 25) {
+// --- Utility Functions (typeWriterEffect, getJiraKey) ---
+function typeWriterEffect(text, element, delay = 10) {
   let i = 0;
-  element.textContent = ''; // Clear content before typing
+  element.textContent = '';
   function type() {
     if (i < text.length) {
       element.textContent += text.charAt(i);
@@ -106,60 +17,157 @@ function typeWriterEffect(text, element, delay = 25) {
   type();
 }
 
-// Main execution
-// We should ensure this runs after the target elements are available.
-// A common practice is to use a MutationObserver if elements are dynamically loaded,
-// or simply rely on `document_idle` run_at timing from manifest.
-// For robustness, let's check for the trigger element before proceeding.
-
-const checkInterval = setInterval(() => {
-  if (document.getElementById('jira-share-trigger') && document.getElementById('key-val') && document.getElementById('viewissuesidebar')) {
-    clearInterval(checkInterval); // Stop checking once elements are found
-
-    const summaryButton = createSummaryButton();
-    if (!summaryButton) return;
-
-    summaryButton.addEventListener('click', () => {
-      const jiraKey = getJiraKey();
-      const displayTarget = getDisplayTargetElement();
-
-      if (!jiraKey) {
-        if(displayTarget) displayError('JIRAキーが見つかりません。', displayTarget);
-        else alert('JIRAキーが見つかりません。');
-        return;
-      }
-      if (!displayTarget) {
-        alert('結果の表示場所が見つかりません。');
-        return;
-      }
-
-      displayLoading(displayTarget);
-
-      chrome.runtime.sendMessage(
-        { type: 'GET_JIRA_SUMMARY', jiraKey: jiraKey },
-        (response) => {
-          removeExistingMessages(); // Ensure loading is removed even if target changed or error before display
-          if (chrome.runtime.lastError) {
-            // Handle errors from sendMessage itself (e.g., no listener)
-            console.error('JIRA Summary Extension: Message sending failed:', chrome.runtime.lastError.message);
-            displayError(`拡張機能エラー: ${chrome.runtime.lastError.message}`, displayTarget);
-            return;
-          }
-
-          if (response) {
-            if (response.error) {
-              console.error('JIRA Summary Extension: Error from background:', response.error);
-              displayError(`エラー: ${response.error}`, displayTarget);
-            } else if (response.summary) {
-              displaySummary(response.summary, displayTarget);
-            } else {
-              displayError('不明な応答がバックグラウンドから返されました。', displayTarget);
-            }
-          } else {
-            displayError('バックグラウンドスクリプトからの応答がありません。', displayTarget);
-          }
-        }
-      );
-    });
+function getJiraKey() {
+  const keyValElement = document.getElementById('key-val');
+  if (!keyValElement) {
+    console.warn('JIRA Summary Extension: key-val element not found.');
+    return null;
   }
-}, 500); // Check every 500ms
+  return keyValElement.textContent ? keyValElement.textContent.trim() : null;
+}
+
+// --- Button Creation & Management ---
+function createAndInsertSummaryButton() {
+  let button = document.getElementById(BUTTON_ID);
+  if (!button) {
+    button = document.createElement('button');
+    button.id = BUTTON_ID;
+    button.textContent = 'JIRAサマリー表示';
+  }
+
+  button.removeEventListener('click', handleSummaryButtonClick);
+  button.addEventListener('click', handleSummaryButtonClick);
+
+  const jiraShareTrigger = document.getElementById('jira-share-trigger');
+  if (jiraShareTrigger && jiraShareTrigger.parentNode) {
+    if (button.parentNode !== jiraShareTrigger.parentNode || button.nextSibling !== jiraShareTrigger) {
+        jiraShareTrigger.parentNode.insertBefore(button, jiraShareTrigger);
+    }
+  } else {
+    console.warn('JIRA Summary Extension: jira-share-trigger not found, button cannot be placed reliably.');
+    // Attempt to remove button if it exists but cannot be placed, to avoid orphaned interactive elements
+    if(button && button.parentNode) button.remove();
+    return null;
+  }
+  return button;
+}
+
+// --- Display Area Preparation ---
+function prepareMessageArea() {
+    const rootDisplayContainer = document.getElementById(ROOT_DISPLAY_CONTAINER_ID);
+    if (!rootDisplayContainer) {
+        console.error("JIRA Summary Extension: Root display container not found. Cannot prepare message area.");
+        messageAreaContainer = null; // Ensure it's null if root is gone
+        return false;
+    }
+
+    // If messageAreaContainer doesn't exist, isn't a child of root, or root was cleared.
+    if (!messageAreaContainer || !rootDisplayContainer.contains(messageAreaContainer)) {
+        rootDisplayContainer.innerHTML = ''; // Clear root container for fresh setup
+        messageAreaContainer = document.createElement('div');
+        messageAreaContainer.id = 'jiraSummaryMessageArea'; // For potential specific styling
+        rootDisplayContainer.appendChild(messageAreaContainer);
+    } else {
+        // If it exists and is correctly parented, just clear its content for new messages
+        messageAreaContainer.innerHTML = '';
+    }
+    return true;
+}
+
+// --- Display Functions ---
+function displayLoading() {
+  if (!prepareMessageArea()) return;
+  const loadingDiv = document.createElement('div');
+  loadingDiv.id = 'jiraSummaryLoading';
+  loadingDiv.textContent = 'サマリーを作成しています...';
+  messageAreaContainer.appendChild(loadingDiv);
+}
+
+function displaySummary(summaryText) {
+  if (!prepareMessageArea()) return;
+  const summaryDiv = document.createElement('div');
+  summaryDiv.id = 'jiraSummaryDisplay';
+  messageAreaContainer.appendChild(summaryDiv);
+  typeWriterEffect(summaryText, summaryDiv);
+}
+
+function displayError(errorMessage) {
+  if (!prepareMessageArea()) return;
+  const errorDiv = document.createElement('div');
+  errorDiv.id = 'jiraSummaryError';
+  errorDiv.textContent = errorMessage;
+  messageAreaContainer.appendChild(errorDiv);
+}
+
+// --- Event Handler for the button ---
+function handleSummaryButtonClick() {
+    if (!messageAreaContainer && !prepareMessageArea()) { // Try to prepare if not ready
+        console.error("JIRA Summary Extension: Message area container not initialized and could not be prepared.");
+        alert("拡張機能の表示エリアが準備できていません。ページを再読み込みしてみてください。");
+        return;
+    }
+
+    const jiraKey = getJiraKey();
+    if (!jiraKey) {
+      displayError('JIRAキーが見つかりません。');
+      return;
+    }
+
+    displayLoading();
+
+    chrome.runtime.sendMessage(
+      { type: 'GET_JIRA_SUMMARY', jiraKey: jiraKey },
+      (response) => {
+        if (!prepareMessageArea() && !response ) { // Ensure message area is still valid before displaying response
+             console.error("JIRA Summary Extension: Message area became unavailable during API call.");
+             return;
+        }
+        if (chrome.runtime.lastError) {
+          console.error('JIRA Summary Extension: Message sending failed:', chrome.runtime.lastError.message);
+          displayError(`拡張機能エラー: ${chrome.runtime.lastError.message}`);
+          return;
+        }
+        if (response) {
+          if (response.error) {
+            displayError(`エラー: ${response.error}`);
+          } else if (typeof response.summary !== 'undefined') {
+            displaySummary(response.summary);
+          } else {
+            displayError('不明な応答がバックグラウンドから返されました。');
+          }
+        } else {
+          displayError('バックグラウンドスクリプトからの応答がありません。');
+        }
+      }
+    );
+}
+
+// --- Main execution logic ---
+const checkInterval = setInterval(() => {
+  const jiraKeyValElement = document.getElementById('key-val');
+  const jiraShareTriggerElement = document.getElementById('jira-share-trigger'); // Needed for button placement
+  const slackPanel = document.getElementById('slack-viewissue-panel'); // Needed for display area placement
+
+  let displayInsertionPoint = null;
+  if (slackPanel && slackPanel.children[1]) {
+      displayInsertionPoint = slackPanel.children[1];
+  }
+
+  if (jiraKeyValElement && jiraShareTriggerElement && displayInsertionPoint) {
+    clearInterval(checkInterval);
+
+    let rootDisplayContainer = document.getElementById(ROOT_DISPLAY_CONTAINER_ID);
+    if (!rootDisplayContainer) {
+        rootDisplayContainer = document.createElement('div');
+        rootDisplayContainer.id = ROOT_DISPLAY_CONTAINER_ID;
+        displayInsertionPoint.insertAdjacentElement('afterend', rootDisplayContainer);
+    }
+
+    if (!prepareMessageArea()) {
+        console.error("JIRA Summary Extension: Failed to prepare message area on initial setup. Aborting.");
+        return;
+    }
+
+    createAndInsertSummaryButton();
+  }
+}, 500);
