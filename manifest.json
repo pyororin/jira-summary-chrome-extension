@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "JIRA Summary Viewer",
+  "version": "1.0",
+  "description": "Fetches and displays JIRA issue summaries.",
+  "permissions": [
+    "storage",
+    "http://example.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
