@@ -4,8 +4,10 @@
   "version": "1.0",
   "description": "Fetches and displays JIRA issue summaries.",
   "permissions": [
-    "storage",
-    "http://example.com/*"
+    "storage"
+  ],
+  "host_permissions": [
+    "http://localhost:8080/hoge-be/*"
   ],
   "action": {
     "default_popup": "popup.html"
