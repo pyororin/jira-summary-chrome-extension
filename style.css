@@ -1,39 +1,54 @@
-body {
-  font-family: sans-serif;
-  width: 300px; /* Adjust width as needed */
-  padding: 10px;
-}
+/* Reset or clear previous styles if any */
+/* For example, you might have body styles from popup specific CSS */
+/* For content scripts, it's often better to be very specific to avoid conflicts */
 
-div {
-  margin-bottom: 10px;
-}
-
-label {
+#jiraSummaryExtensionButton {
+  background-color: #0052cc; /* Example blue, similar to Atlassian blue */
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 13px; /* Adjust to match surrounding UI */
+  margin-left: 5px;
   margin-right: 5px;
-}
-
-input[type="text"] {
-  width: calc(100% - 70px); /* Adjust based on label and button */
-  padding: 5px;
-  margin-bottom: 5px; /* Add some space below input */
-}
-
-button {
-  padding: 8px 15px;
+  border-radius: 3px;
   cursor: pointer;
 }
 
-#loadingMessage {
-  color: #555;
-  font-style: italic;
-  margin-top: 10px;
+#jiraSummaryExtensionButton:hover {
+  background-color: #0065ff;
 }
 
-#summaryDisplay {
+#jiraSummaryLoading,
+#jiraSummaryError,
+#jiraSummaryDisplay {
   margin-top: 10px;
   padding: 10px;
+  border-radius: 3px;
+  font-size: 14px; /* Adjust as needed */
+  width: auto; /* Let it take available width or set a specific one */
+  /* Ensure it's positioned correctly relative to the target insertion point */
+}
+
+#jiraSummaryLoading {
+  background-color: #f0f0f0;
   border: 1px solid #ddd;
-  min-height: 50px;
-  white-space: pre-wrap; /* To respect newlines in summary */
-  word-wrap: break-word; /* To break long words */
+  color: #333;
+}
+
+#jiraSummaryError {
+  background-color: #ffebe6; /* Light red background */
+  border: 1px solid #ff8f73; /* Reddish border */
+  color: #c00; /* Dark red text */
+}
+
+#jiraSummaryDisplay {
+  background-color: #f8f9fa; /* Light grey background */
+  border: 1px solid #ccc;
+  white-space: pre-wrap; /* Preserve whitespace and newlines */
+  word-wrap: break-word; /* Break long words */
+  font-family: monospace; /* Optional: for fixed-width text if summary is code-like */
+  line-height: 1.5;
 }
