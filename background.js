@@ -4,6 +4,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const maxRetries = 1;
     let attempt = 0;
 
+    // --- Prepare request body with optional thresholds ---
+    const requestBody = {
+      note: "全体の要約をお願いします。"
+    };
+
+    if (message.threshold1 !== undefined) {
+      requestBody.scoreThreshold1 = message.threshold1; // Assumed backend parameter name
+    }
+    if (message.threshold2 !== undefined) {
+      requestBody.scoreThreshold2 = message.threshold2; // Assumed backend parameter name
+    }
+    // --- End of Prepare request body ---
+
     function doFetch(currentAttempt) {
       const apiUrl = `http://localhost:8080/jira/v1/summary/${encodeURIComponent(jiraKey)}`;
 
