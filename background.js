@@ -1,10 +1,10 @@
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'GET_JIRA_SUMMARY') {
     const jiraKey = message.jiraKey;
-    const maxRetries = 1;
-    let attempt = 0;
+    const maxRetries = 1; // For 503 errors
+    let attempt = 0; // For 503 errors
 
-    function doFetch(currentAttempt) {
+    function doFetch(currentAttempt, retriedAfterHogeTop = false) { // Added retriedAfterHogeTop
       const apiUrl = `http://localhost:8080/jira/v1/summary/${encodeURIComponent(jiraKey)}`;
 
       fetch(apiUrl, {
@@ -16,29 +16,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         body: JSON.stringify({ note: "全体の要約をお願いします。" })
       })
       .then(response => {
+        if (response.status === 401) {
+          if (!retriedAfterHogeTop) {
+            console.log('JIRA Summary Extension: Received 401. Attempting /hoge/top and retry.');
+            // Make the /hoge/top request
+            fetch('http://localhost:8080/hoge/top', { method: 'GET', credentials: 'omit' })
+              .finally(() => { // Ensure original request is retried regardless of /hoge/top outcome
+                console.log('JIRA Summary Extension: /hoge/top request completed. Retrying original API call.');
+                doFetch(currentAttempt, true); // Pass true for retriedAfterHogeTop
+              });
+            return null; // Signal to skip further .then() for this attempt
+          } else {
+            // If 401 received even after /hoge/top and retry, treat as a final error
+            console.warn('JIRA Summary Extension: Received 401 again after /hoge/top and retry.');
+            // Fall through to the generic error handling for !response.ok
+          }
+        }
+
         if (!response.ok) {
           if (response.status === 503 && currentAttempt < maxRetries) {
             console.log(`JIRA Summary Extension: Received 503, attempt ${currentAttempt + 1} of ${maxRetries}. Retrying in 2 seconds...`);
             setTimeout(() => {
-              doFetch(currentAttempt + 1);
+              // Note: currentAttempt for 503 is separate from retriedAfterHogeTop for 401
+              doFetch(currentAttempt + 1, retriedAfterHogeTop);
             }, 2000);
             return null; // Signal to skip further .then() for this attempt
           }
 
-          // For all other !response.ok cases (including 503 after max retries)
           return response.text().then(text => {
-            // Log for 503 after retries, before throwing generic error
             if (response.status === 503) {
-              console.warn('JIRA Summary Extension: Max retries reached for 503 (or was the only attempt and failed). Reporting generic error.');
+              console.warn('JIRA Summary Extension: Max retries reached for 503. Reporting error.');
             }
+            // For 401 after retry, or any other non-ok status
             const err = new Error(`HTTP error ${response.status}: ${text || response.statusText}`);
-            throw err; // This rejects the promise chain, to be caught by .catch()
+            throw err;
           });
         }
         return response.json();
       })
       .then(data => {
-        if (data === null) { // A retry was triggered
+        if (data === null) { // A retry (either 503 or initial 401 flow) was triggered
           return;
         }
 
@@ -56,7 +73,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
     }
 
-    doFetch(attempt);
+    doFetch(attempt); // Initial call, retriedAfterHogeTop is false by default
 
     return true;
   }
