@@ -25,44 +25,140 @@ function typeWriterEffect(text, element, delay = 10) {
   element.innerHTML = ''; // 要素の内容をクリア
   const lines = text.split('\n'); // テキストを行に分割
   let lineIndex = 0; // 現在の行インデックス
-  let charIndex = 0; // 現在の文字インデックス
-  let currentLineStrongWrapper = null; // '- 'で始まる行を囲む<strong>要素
+  element.innerHTML = ''; // 要素の内容をクリア
+  let overallCharIndex = 0; // テキスト全体の文字インデックス
 
-  function typeCharacter() {
-    if (lineIndex >= lines.length) { // 全ての行を表示し終えたら終了
+  function type() {
+    if (overallCharIndex >= text.length) {
       return;
     }
-    let currentLineText = lines[lineIndex]; // 現在の行テキスト
-    if (charIndex === 0) { // 行の最初の文字の場合
-      if (lineIndex > 0) { // 最初の行でなければ改行を追加
-        element.appendChild(document.createElement('br'));
-      }
-      // 行が'- 'で始まる場合、<strong>ラッパーを作成
-      if (currentLineText.startsWith('- ')) {
-        currentLineStrongWrapper = document.createElement('strong');
-        element.appendChild(currentLineStrongWrapper);
-      } else {
-        currentLineStrongWrapper = null;
-      }
+
+    // Check for newline character
+    if (text.substring(overallCharIndex).startsWith('\n')) {
+      element.appendChild(document.createElement('br'));
+      overallCharIndex++;
+      setTimeout(type, delay);
+      return;
     }
-    if (charIndex < currentLineText.length) { // 行の文字が残っている場合
-      const char = currentLineText.charAt(charIndex); // 現在の文字を取得
-      const textNode = document.createTextNode(char); // テキストノードを作成
-      if (currentLineStrongWrapper) { // <strong>ラッパーがあればそこに追加
-        currentLineStrongWrapper.appendChild(textNode);
-      } else { // なければ要素に直接追加
-        element.appendChild(textNode);
+
+    // Check for bold lines (starting with '- ')
+    // This check should happen at the beginning of a line.
+    // We can infer this by checking if the last appended child was a <br> or if element is empty.
+    let isStartOfNewLine = element.children.length === 0 || (element.lastChild && element.lastChild.nodeName.toLowerCase() === 'br');
+    if (isStartOfNewLine && text.substring(overallCharIndex).startsWith('- ')) {
+      const strong = document.createElement('strong');
+      element.appendChild(strong);
+      // Type out the '- ' part
+      let i = 0;
+      function typeBoldPrefix() {
+        if (i < 2) {
+          strong.appendChild(document.createTextNode(text.charAt(overallCharIndex)));
+          overallCharIndex++;
+          i++;
+          setTimeout(typeBoldPrefix, delay);
+        } else {
+          // Continue typing the rest of the bold line or next segment
+          typeSegment(strong);
+        }
       }
-      charIndex++;
-      setTimeout(typeCharacter, delay); // 次の文字を遅延表示
-    } else { // 行の終わりまで表示した場合
-      lineIndex++; // 次の行へ
-      charIndex = 0; // 文字インデックスをリセット
-      currentLineStrongWrapper = null; // <strong>ラッパーをリセット
-      setTimeout(typeCharacter, delay); // 次の行の処理を開始
+      typeBoldPrefix();
+      return;
+    }
+
+    // Check for <a> tags
+    const tagRegex = /<a\s+(?:[^>]*?\s+)?href="([^"]*)"[^>]*>(.*?)<\/a>/gi;
+    // Important: Create a new regex object or reset lastIndex if using exec in a loop on the same string.
+    // Here, we are creating it fresh or it's implicitly reset as we call substring.
+    const remainingText = text.substring(overallCharIndex);
+    // We want to match only if the tag is at the beginning of the remainingText.
+    // So, we can use startsWith-like behavior by checking match.index === 0.
+    const match = tagRegex.exec(remainingText);
+
+    if (match && match.index === 0) { // If an <a> tag is at the current position
+      const fullMatchString = match[0];
+      const href = match[1];
+      const linkTextContent = match[2]; // This is the text between <a> and </a>
+
+      const anchor = document.createElement('a');
+      anchor.href = href;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      element.appendChild(anchor);
+
+      // Type out the link text content inside the anchor
+      let currentLinkTextCharIndex = 0;
+      function typeCurrentLinkText() {
+        if (currentLinkTextCharIndex < linkTextContent.length) {
+          anchor.appendChild(document.createTextNode(linkTextContent.charAt(currentLinkTextCharIndex)));
+          currentLinkTextCharIndex++;
+          // We don't advance overallCharIndex here yet,
+          // it will be advanced by the fullMatchString.length after the link text is typed.
+          setTimeout(typeCurrentLinkText, delay);
+        } else {
+          // After typing link text, advance overallCharIndex by the length of the entire <a> tag
+          overallCharIndex += fullMatchString.length;
+          setTimeout(type, delay); // Continue with the rest of the text
+        }
+      }
+      typeCurrentLinkText();
+    } else {
+      // Type out a segment of plain text until the next tag or newline or end of text
+      typeSegment(element);
     }
   }
-  typeCharacter(); // タイプライター処理を開始
+
+  function typeSegment(parentElement, isBold = false) {
+    let segmentCharIndex = 0;
+    let currentSegmentText = "";
+    let textToTypeInSegment = "";
+
+    // Determine the end of the current plain text segment
+    // It ends at the next newline, the start of an <a> tag, or the end of the total text.
+    const nextNewlineIndex = text.indexOf('\n', overallCharIndex);
+    const tagRegexForSegment = /<a\s+(?:[^>]*?\s+)?href="([^"]*)"[^>]*>(.*?)<\/a>/gi;
+    // Important: Reset lastIndex before using exec in a loop or on different parts of a string.
+    // Create a new RegExp object or manually reset lastIndex.
+    // For this specific search, we only care about the *next* match from overallCharIndex.
+    let nextTagStartIndex = -1;
+    const searchTextForTag = text.substring(overallCharIndex);
+    const tagMatchInSegment = tagRegexForSegment.exec(searchTextForTag);
+    if (tagMatchInSegment) {
+      nextTagStartIndex = overallCharIndex + tagMatchInSegment.index;
+    }
+
+    let endOfSegment = text.length; // Assume end of total text initially
+
+    if (nextNewlineIndex !== -1) {
+      endOfSegment = Math.min(endOfSegment, nextNewlineIndex);
+    }
+    if (nextTagStartIndex !== -1) {
+      endOfSegment = Math.min(endOfSegment, nextTagStartIndex);
+    }
+
+    textToTypeInSegment = text.substring(overallCharIndex, endOfSegment);
+
+    if (textToTypeInSegment.length === 0) {
+      // If the segment is empty (e.g., because we are exactly at a newline or a tag),
+      // call type() to handle the newline/tag.
+      type();
+      return;
+    }
+
+    let currentSegmentCharIndex = 0;
+    function typeCharInCurrentSegment() {
+      if (currentSegmentCharIndex < textToTypeInSegment.length) {
+        parentElement.appendChild(document.createTextNode(textToTypeInSegment.charAt(currentSegmentCharIndex)));
+        currentSegmentCharIndex++;
+        overallCharIndex++; // Crucially, advance the main overallCharIndex
+        setTimeout(typeCharInCurrentSegment, delay);
+      } else {
+        // End of this plain text segment, call main type function to decide what's next
+        type();
+      }
+    }
+    typeCharInCurrentSegment();
+  }
+  type(); // Start the typewriter effect
 }
 
 /**
