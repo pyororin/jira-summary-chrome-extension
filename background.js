@@ -1,3 +1,5 @@
+importScripts('config.js');
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'GET_JIRA_SUMMARY') {
     const maxRetries = 1; // For 503 errors
@@ -5,7 +7,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     // Pass message object to use message.jiraKey and message.authRetry
     function doFetch(message, currentAttempt, retriedAfterHogeTop = false) {
-      const apiUrl = 'http://localhost:8080/hoge/api/jira-summary/';
+      const apiUrl = API_CONFIG.jiraSummaryUrl;
 
       fetch(apiUrl, {
         method: 'POST',
@@ -34,7 +36,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 // This will then use response.text() or statusText to create an error message.
             } else {
                 console.log('JIRA Summary Extension: Received 401 (first attempt for this user action). Sending authUrl.');
-                sendResponse({ authUrl: 'http://localhost:8080/hoge/top', jiraKey: message.jiraKey });
+                sendResponse({ authUrl: API_CONFIG.authUrl, jiraKey: message.jiraKey });
                 return null; // Crucial: stop further processing here
             }
         }
