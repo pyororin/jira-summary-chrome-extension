@@ -73,12 +73,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ summary: data.data });
         } else {
           console.error('JIRA Summary Extension: Unexpected data structure from API (expected data.data):', data);
-          sendResponse({ error: 'APIから予期しないデータ形式（data.dataが見つかりません）で応答がありました。' });
+          const originalErrorDetails = 'APIの応答データ形式が予期されたものではありません。';
+          const userMessage = `エラーが発生しました。しばらく時間をおいてから再度お試しください。(詳細: ${originalErrorDetails})`;
+          sendResponse({ error: userMessage });
         }
       })
       .catch(error => {
         console.error('JIRA Summary Extension: Fetch error or other unhandled promise rejection:', error && error.message ? error.message : String(error));
-        sendResponse({ error: (error && error.message) || '不明なエラーが発生しました。' });
+        const originalErrorDetails = (error && error.message) || '不明なエラー';
+        const userMessage = `エラーが発生しました。しばらく時間をおいてから再度お試しください。(詳細: ${originalErrorDetails})`;
+        sendResponse({ error: userMessage });
       });
     }
 
