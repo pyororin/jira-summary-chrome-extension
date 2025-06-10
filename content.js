@@ -1,60 +1,50 @@
-const ROOT_DISPLAY_CONTAINER_ID = 'jiraSummaryExtensionRootContainer'; // Renamed for clarity
+const ROOT_DISPLAY_CONTAINER_ID = 'jiraSummaryExtensionRootContainer';
 const BUTTON_ID = 'jiraSummaryExtensionButton';
 
-let messageAreaContainer = null; // Will hold the div inside ROOT_DISPLAY_CONTAINER_ID
+let messageAreaContainer = null;
 
 // --- Utility Functions (typeWriterEffect, getJiraKey) ---
-function typeWriterEffect(text, element, delay = 10) { // delay is already 10ms from previous change
-  element.innerHTML = ''; // Clear content before typing
-  const lines = text.split('\n'); // Split text into lines based on literal \n (corrected from prompt to use literal \n for now)
+function typeWriterEffect(text, element, delay = 10) {
+  element.innerHTML = '';
+  const lines = text.split('\n');
   let lineIndex = 0;
   let charIndex = 0;
-  let currentLineStrongWrapper = null; // To hold the <strong> element for the current heading line
+  let currentLineStrongWrapper = null;
 
   function typeCharacter() {
     if (lineIndex >= lines.length) {
-      return; // All lines processed
+      return;
     }
-
     let currentLineText = lines[lineIndex];
-
-    if (charIndex === 0) { // Processing the start of a new line
-      if (lineIndex > 0) { // Add <br> before starting a new line, if it's not the very first line
+    if (charIndex === 0) {
+      if (lineIndex > 0) {
         element.appendChild(document.createElement('br'));
       }
-      // Check if the current line is a heading
       if (currentLineText.startsWith('- ')) {
         currentLineStrongWrapper = document.createElement('strong');
         element.appendChild(currentLineStrongWrapper);
       } else {
-        currentLineStrongWrapper = null; // Not a heading line, subsequent characters append directly to `element`
+        currentLineStrongWrapper = null;
       }
     }
-
-    // Type the next character of the current line
     if (charIndex < currentLineText.length) {
       const char = currentLineText.charAt(charIndex);
       const textNode = document.createTextNode(char);
-
       if (currentLineStrongWrapper) {
-        // If it's a heading line, append character to the <strong> wrapper
         currentLineStrongWrapper.appendChild(textNode);
       } else {
-        // Otherwise, append character directly to the main display element
         element.appendChild(textNode);
       }
-
       charIndex++;
       setTimeout(typeCharacter, delay);
-    } else { // Reached the end of the current line
-      lineIndex++; // Move to the next line
-      charIndex = 0; // Reset character index for the new line
-      currentLineStrongWrapper = null; // Reset strong wrapper for the new line
-
+    } else {
+      lineIndex++;
+      charIndex = 0;
+      currentLineStrongWrapper = null;
       setTimeout(typeCharacter, delay);
     }
   }
-  typeCharacter(); // Start the typing process
+  typeCharacter();
 }
 
 function getJiraKey() {
@@ -74,10 +64,8 @@ function createAndInsertSummaryButton() {
     button.id = BUTTON_ID;
     button.textContent = 'JIRAサマリー表示';
   }
-
   button.removeEventListener('click', handleSummaryButtonClick);
   button.addEventListener('click', handleSummaryButtonClick);
-
   const jiraShareTrigger = document.getElementById('jira-share-trigger');
   if (jiraShareTrigger && jiraShareTrigger.parentNode) {
     if (button.parentNode !== jiraShareTrigger.parentNode || button.nextSibling !== jiraShareTrigger) {
@@ -85,7 +73,6 @@ function createAndInsertSummaryButton() {
     }
   } else {
     console.warn('JIRA Summary Extension: jira-share-trigger not found, button cannot be placed reliably.');
-    // Attempt to remove button if it exists but cannot be placed, to avoid orphaned interactive elements
     if(button && button.parentNode) button.remove();
     return null;
   }
@@ -97,18 +84,15 @@ function prepareMessageArea() {
     const rootDisplayContainer = document.getElementById(ROOT_DISPLAY_CONTAINER_ID);
     if (!rootDisplayContainer) {
         console.error("JIRA Summary Extension: Root display container not found. Cannot prepare message area.");
-        messageAreaContainer = null; // Ensure it's null if root is gone
+        messageAreaContainer = null;
         return false;
     }
-
-    // If messageAreaContainer doesn't exist, isn't a child of root, or root was cleared.
     if (!messageAreaContainer || !rootDisplayContainer.contains(messageAreaContainer)) {
-        rootDisplayContainer.innerHTML = ''; // Clear root container for fresh setup
+        rootDisplayContainer.innerHTML = '';
         messageAreaContainer = document.createElement('div');
-        messageAreaContainer.id = 'jiraSummaryMessageArea'; // For potential specific styling
+        messageAreaContainer.id = 'jiraSummaryMessageArea';
         rootDisplayContainer.appendChild(messageAreaContainer);
     } else {
-        // If it exists and is correctly parented, just clear its content for new messages
         messageAreaContainer.innerHTML = '';
     }
     return true;
@@ -131,17 +115,17 @@ function displaySummary(summaryText) {
   typeWriterEffect(summaryText, summaryDiv);
 }
 
-function displayError(errorMessage) {
+function displayError(errorMessage) { // Can be used for info messages too
   if (!prepareMessageArea()) return;
   const errorDiv = document.createElement('div');
-  errorDiv.id = 'jiraSummaryError';
+  errorDiv.id = 'jiraSummaryError'; // Consider a different ID for info messages if styling differs
   errorDiv.textContent = errorMessage;
   messageAreaContainer.appendChild(errorDiv);
 }
 
 // --- Event Handler for the button ---
 function handleSummaryButtonClick() {
-    if (!messageAreaContainer && !prepareMessageArea()) { // Try to prepare if not ready
+    if (!messageAreaContainer && !prepareMessageArea()) {
         console.error("JIRA Summary Extension: Message area container not initialized and could not be prepared.");
         alert("拡張機能の表示エリアが準備できていません。ページを再読み込みしてみてください。");
         return;
@@ -158,17 +142,27 @@ function handleSummaryButtonClick() {
     chrome.runtime.sendMessage(
       { type: 'GET_JIRA_SUMMARY', jiraKey: jiraKey },
       (response) => {
-        if (!prepareMessageArea() && !response ) { // Ensure message area is still valid before displaying response
+        if (!prepareMessageArea() && !(response && response.redirectUrl)) { // Allow if redirectUrl is present
              console.error("JIRA Summary Extension: Message area became unavailable during API call.");
-             return;
+             // If it's a redirect, we might still want to show the redirect message if possible,
+             // but if messageArea is gone, there's nowhere to put it.
+             // For now, just return if area is gone AND it's not a redirect scenario.
+             if (!response || !response.redirectUrl) return;
         }
+
         if (chrome.runtime.lastError) {
           console.error('JIRA Summary Extension: Message sending failed:', chrome.runtime.lastError.message);
           displayError(`拡張機能エラー: ${chrome.runtime.lastError.message}`);
           return;
         }
+
         if (response) {
-          if (response.error) {
+          if (response.redirectUrl) {
+            // --- NEW: Handle redirect ---
+            chrome.tabs.create({ url: response.redirectUrl, active: true });
+            displayError('認証が必要です。新しいタブで認証を完了し、再度「サマリー表示」ボタンを押してください。');
+            // --- END NEW ---
+          } else if (response.error) {
             displayError(`エラー: ${response.error}`);
           } else if (typeof response.summary !== 'undefined') {
             displaySummary(response.summary);
@@ -185,8 +179,8 @@ function handleSummaryButtonClick() {
 // --- Main execution logic ---
 const checkInterval = setInterval(() => {
   const jiraKeyValElement = document.getElementById('key-val');
-  const jiraShareTriggerElement = document.getElementById('jira-share-trigger'); // Needed for button placement
-  const slackPanel = document.getElementById('slack-viewissue-panel'); // Needed for display area placement
+  const jiraShareTriggerElement = document.getElementById('jira-share-trigger');
+  const slackPanel = document.getElementById('slack-viewissue-panel');
 
   let displayInsertionPoint = null;
   if (slackPanel && slackPanel.children[1]) {

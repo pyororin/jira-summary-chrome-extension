@@ -4,7 +4,8 @@
   "version": "1.0",
   "description": "Fetches and displays JIRA issue summaries directly on the page.",
   "permissions": [
-    "storage"
+    "storage",
+    "tabs"
   ],
   "host_permissions": [
     "http://localhost:8080/hoge-be/*"
