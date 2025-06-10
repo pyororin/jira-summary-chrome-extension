@@ -5,7 +5,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     let attempt = 0; // For 503 errors
 
     function doFetch(currentAttempt, retriedAfterHogeTop = false) {
-      const apiUrl = `http://localhost:8080/jira/v1/summary/${encodeURIComponent(jiraKey)}`;
+      const apiUrl = 'http://localhost:8080/hoge/api/jira-summary/';
 
       fetch(apiUrl, {
         method: 'POST',
@@ -13,7 +13,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           'Content-Type': 'application/json',
           'accept': 'application/json'
         },
-        body: JSON.stringify({ note: "全体の要約をお願いします。" }),
+        body: JSON.stringify({ jiraKey: jiraKey, note: "全体の要約をお願いします。" }),
         redirect: 'manual' // Key change: handle redirects manually
       })
       .then(response => {
