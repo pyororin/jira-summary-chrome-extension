@@ -1,10 +1,10 @@
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'GET_JIRA_SUMMARY') {
-    const jiraKey = message.jiraKey;
     const maxRetries = 1; // For 503 errors
     let attempt = 0; // For 503 errors
 
-    function doFetch(currentAttempt, retriedAfterHogeTop = false) {
+    // Pass message object to use message.jiraKey and message.authRetry
+    function doFetch(message, currentAttempt, retriedAfterHogeTop = false) {
       const apiUrl = 'http://localhost:8080/hoge/api/jira-summary/';
 
       fetch(apiUrl, {
@@ -13,7 +13,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           'Content-Type': 'application/json',
           'accept': 'application/json'
         },
-        body: JSON.stringify({ jiraKey: jiraKey, note: "全体の要約をお願いします。" }),
+        // Use message.jiraKey directly
+        body: JSON.stringify({ jiraKey: message.jiraKey, note: "全体の要約をお願いします。" }),
         redirect: 'manual' // Key change: handle redirects manually
       })
       .then(response => {
@@ -25,28 +26,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return null; // Stop further processing in this chain, response handled
         }
 
-        // Existing 401 handling
+        // New 401 handling logic
         if (response.status === 401) {
-            if (!retriedAfterHogeTop) {
-                console.log('JIRA Summary Extension: Received 401. Attempting /hoge/top and retry.');
-                fetch('http://localhost:8080/hoge/top', { method: 'GET', credentials: 'omit' })
-                  .finally(() => {
-                    console.log('JIRA Summary Extension: /hoge/top request completed. Retrying original API call.');
-                    doFetch(currentAttempt, true); // Pass true for retriedAfterHogeTop
-                  });
-                return null; // Stop this chain, new fetch initiated
+            if (message.authRetry) { // Check the flag from the message
+                console.warn('JIRA Summary Extension: Received 401 on authRetry. Reporting as error.');
+                // Do NOT send authUrl. Let it fall through to the general !response.ok handler below.
+                // This will then use response.text() or statusText to create an error message.
             } else {
-                console.warn('JIRA Summary Extension: Received 401 again after /hoge/top and retry.');
-                // Fall through to !response.ok for error reporting via that path
+                console.log('JIRA Summary Extension: Received 401 (first attempt for this user action). Sending authUrl.');
+                sendResponse({ authUrl: 'http://localhost:8080/hoge/top', jiraKey: message.jiraKey });
+                return null; // Crucial: stop further processing here
             }
         }
 
         // Existing non-ok (including 503 retry) and error handling
-        if (!response.ok) { // This will catch 401s that fall through, and other client/server errors
+        if (!response.ok) { // This will catch 401s that fall through (including authRetry ones), and other client/server errors
             if (response.status === 503 && currentAttempt < maxRetries) {
                 console.log(`JIRA Summary Extension: Received 503, attempt ${currentAttempt + 1} of ${maxRetries}. Retrying in 2 seconds...`);
                 setTimeout(() => {
-                    doFetch(currentAttempt + 1, retriedAfterHogeTop);
+                    // Pass message along for recursive calls
+                    doFetch(message, currentAttempt + 1, retriedAfterHogeTop);
                 }, 2000);
                 return null; // Stop this chain, new fetch will be initiated by setTimeout
             }
@@ -81,7 +80,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
     }
 
-    doFetch(attempt); // Initial call, retriedAfterHogeTop is false by default
+    // Initial call, pass the message object
+    doFetch(message, attempt);
     return true; // Crucial for asynchronous sendResponse
   }
 });

@@ -2,6 +2,7 @@ const ROOT_DISPLAY_CONTAINER_ID = 'jiraSummaryExtensionRootContainer';
 const BUTTON_ID = 'jiraSummaryExtensionButton';
 
 let messageAreaContainer = null;
+let promptedAuthForJiraKey = null; // Added global variable
 
 // --- Utility Functions (typeWriterEffect, getJiraKey) ---
 function typeWriterEffect(text, element, delay = 10) {
@@ -123,6 +124,14 @@ function displayError(errorMessage) { // Can be used for info messages too
   messageAreaContainer.appendChild(errorDiv);
 }
 
+function displayHtmlMessage(htmlContent, type = 'info') { // type could be 'error', 'info', 'auth' for styling
+  if (!prepareMessageArea()) return;
+  const messageDiv = document.createElement('div');
+  messageDiv.id = `jiraSummaryMessage-${type}`; // e.g., jiraSummaryMessage-auth
+  messageDiv.innerHTML = htmlContent; // Use innerHTML
+  messageAreaContainer.appendChild(messageDiv);
+}
+
 // --- Event Handler for the button ---
 function handleSummaryButtonClick() {
     if (!messageAreaContainer && !prepareMessageArea()) {
@@ -139,38 +148,57 @@ function handleSummaryButtonClick() {
 
     displayLoading();
 
+    const messagePayload = { type: 'GET_JIRA_SUMMARY', jiraKey: jiraKey };
+    if (promptedAuthForJiraKey === jiraKey) {
+        messagePayload.authRetry = true;
+    }
+
     chrome.runtime.sendMessage(
-      { type: 'GET_JIRA_SUMMARY', jiraKey: jiraKey },
+      messagePayload,
       (response) => {
-        if (!prepareMessageArea() && !(response && response.redirectUrl)) { // Allow if redirectUrl is present
-             console.error("JIRA Summary Extension: Message area became unavailable during API call.");
-             // If it's a redirect, we might still want to show the redirect message if possible,
-             // but if messageArea is gone, there's nowhere to put it.
-             // For now, just return if area is gone AND it's not a redirect scenario.
-             if (!response || !response.redirectUrl) return;
+        // Initial check for message area availability.
+        // If it's not available and not a situation where we are about to open a new tab (redirect/authUrl),
+        // then it's problematic to proceed with displaying messages.
+        if (!prepareMessageArea() && !(response && (response.redirectUrl || response.authUrl))) {
+             console.error("JIRA Summary Extension: Message area became unavailable during API call and no redirect/auth URL to display.");
+             if (!response || (!response.redirectUrl && !response.authUrl)) return;
         }
 
         if (chrome.runtime.lastError) {
           console.error('JIRA Summary Extension: Message sending failed:', chrome.runtime.lastError.message);
           displayError(`拡張機能エラー: ${chrome.runtime.lastError.message}`);
+          promptedAuthForJiraKey = null; // Reset on runtime error
           return;
         }
 
         if (response) {
-          if (response.redirectUrl) {
-            // --- NEW: Handle redirect ---
-            chrome.tabs.create({ url: response.redirectUrl, active: true });
-            displayError('認証が必要です。新しいタブで認証を完了し、再度「サマリー表示」ボタンを押してください。');
-            // --- END NEW ---
-          } else if (response.error) {
-            displayError(`エラー: ${response.error}`);
-          } else if (typeof response.summary !== 'undefined') {
-            displaySummary(response.summary);
-          } else {
-            displayError('不明な応答がバックグラウンドから返されました。');
-          }
+            // Handle authUrl first: if present, this is the primary info.
+            if (response.authUrl && response.jiraKey) {
+                const authMessage = `認証が必要です。 <a href='${response.authUrl}' target='_blank' rel='noopener noreferrer'>こちらをクリックしてログイン</a>し、その後再度「サマリー表示」ボタンを押してください。`;
+                displayHtmlMessage(authMessage, 'auth');
+                promptedAuthForJiraKey = response.jiraKey; // Set because auth is being prompted for this key
+            } else {
+                // Not an authUrl prompt, or jiraKey missing from authUrl response for some reason.
+                // This means any previous auth prompt cycle for any key is now over.
+                promptedAuthForJiraKey = null;
+
+                // Now handle other response types.
+                if (response.redirectUrl) {
+                    chrome.tabs.create({ url: response.redirectUrl, active: true });
+                    displayError('認証が必要です。新しいタブで認証を完了し、再度「サマリー表示」ボタンを押してください。');
+                } else if (response.error) { // This will now also handle the authRetry 401 case
+                    displayError(`エラー: ${response.error}`);
+                } else if (typeof response.summary !== 'undefined') {
+                    displaySummary(response.summary);
+                } else {
+                    // This case handles if response is not null, but doesn't match any known success/auth/error/redirect type.
+                    // It could also be an authUrl response that was missing jiraKey, which is unexpected.
+                    displayError('不明な応答がバックグラウンドから返されました。');
+                }
+            }
         } else {
           displayError('バックグラウンドスクリプトからの応答がありません。');
+          promptedAuthForJiraKey = null; // Reset on no response
         }
       }
     );
