@@ -1,3 +1,12 @@
+function getElementByXPath(xpath) {
+  try { // try-catch for invalid XPath expressions
+    const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+    return result.singleNodeValue;
+  } catch (e) {
+    return null;
+  }
+}
+
 // --- グローバル定数 ---
 // ルート表示コンテナのID。ここに拡張機能のUI（メッセージエリアやボタンなど）が挿入されます。
 const ROOT_DISPLAY_CONTAINER_ID = 'jiraSummaryExtensionRootContainer';
@@ -195,6 +204,7 @@ function hasFilterQueryParam() {
  * @returns {HTMLElement|null} 作成または取得したボタン要素。挿入場所が見つからない場合はnull。
  */
 function createAndInsertSummaryButton() {
+  const isFilterMode = hasFilterQueryParam(); // This function should already be defined from step 1
   let button = document.getElementById(BUTTON_ID); // IDでボタンを検索
   if (!button) { // ボタンが存在しない場合
     button = document.createElement('button'); // 新しく作成
@@ -204,8 +214,6 @@ function createAndInsertSummaryButton() {
   // 既存のイベントリスナーを削除してから新しいリスナーを追加（重複を防ぐため）
   button.removeEventListener('click', handleSummaryButtonClick);
   button.addEventListener('click', handleSummaryButtonClick);
-
-  const isFilterMode = hasFilterQueryParam(); // This function should already be defined from step 1
 
   if (isFilterMode) {
     const opsbarTools = document.getElementById('opsbar-jira.issue.tools');
@@ -386,46 +394,63 @@ function reinitializeSummaryUI() {
 let observer = null; // Keep a reference to the observer
 
 function observeIssueChanges() {
-  const targetNode = document.getElementById('key-val'); // Observe key-val itself or its parent
-  // It's often better to observe a stable parent if key-val itself might be replaced.
-  // Let's assume 'key-val' is stable and its content changes, or it has specific children changing.
-  // A more robust target might be a higher-level container like 'issue-content' or 'stalker' part of Jira's DOM.
-  // For this iteration, let's try a common parent that's likely to contain the issue view.
-  // The element with class "issue-container" or ID "issue-content" is often a good candidate.
-  // If these are not stable, document.body might be a last resort with careful filtering of mutations.
-  // Let's try to observe the element that contains the issue key, assuming it's relatively stable.
-  // A common pattern is that the issue key is within a header.
-  // Let's use `document.querySelector('#jira-issue-header-actions, #jira-issue-header')` or similar.
-  // Given the context, let's assume `key-val`'s parent is a good candidate for observing childList changes.
-  const keyValElementForObserver = document.getElementById('key-val');
-  if (!keyValElementForObserver || !keyValElementForObserver.parentNode) {
-    console.warn('JIRA Summary Extension (JP): Could not find key-val or its parent to observe. Dynamic updates may not work.');
-    return;
+  let observerTarget = null;
+  const userXPath = '//*[@id="main"]/div/div[2]/div/div/div/div/div/div[2]'; // User provided XPath
+
+  observerTarget = getElementByXPath(userXPath);
+
+  if (observerTarget) {
+    // Successfully found target with XPath
+  } else {
+    console.warn('JIRA Summary Extension (JP): Could not find target with XPath for MutationObserver. Attempting fallback (parent of key-val).');
+    const keyValElementForObserver = document.getElementById('key-val');
+    if (keyValElementForObserver && keyValElementForObserver.parentNode) {
+      observerTarget = keyValElementForObserver.parentNode;
+    }
   }
-  const observerTarget = keyValElementForObserver.parentNode; // Observe parent of key-val
+
+  if (!observerTarget) {
+    console.error('JIRA Summary Extension (JP): MutationObserver: Could not find a suitable target element to observe (neither XPath nor fallback). Dynamic updates will not work.');
+    // If observer is already running from a previous successful attempt, disconnect it.
+    if (observer) {
+      observer.disconnect();
+    }
+    return; // Cannot proceed without a target
+  }
 
   const config = { childList: true, subtree: true };
 
   const callback = function(mutationsList, obs) {
-    // Check if the JIRA key has actually changed or if our button is missing
     const newJiraKeyElement = document.getElementById('key-val');
     const newJiraKey = newJiraKeyElement ? newJiraKeyElement.textContent.trim() : null;
-    const buttonMissing = !document.getElementById(BUTTON_ID);
+    const buttonElement = document.getElementById(BUTTON_ID); // Get button by ID
+    // Check if button is properly in DOM, not just if element exists detached
+    const buttonMissing = !buttonElement || !document.body.contains(buttonElement);
 
     if (newJiraKey && (newJiraKey !== currentJiraKeyForObserver || buttonMissing)) {
-      console.log('JIRA Summary Extension (JP): Detected JIRA issue change or missing button, re-initializing UI.');
-      obs.disconnect(); // Temporarily stop observing
-      reinitializeSummaryUI();
-      // Update currentJiraKeyForObserver is now done inside reinitializeSummaryUI
-      // currentJiraKeyForObserver = newJiraKey; // Update after re-init
-      // Re-observe. Target might have changed if key-val's parent was replaced.
-      // It's safer to re-evaluate the target for the observer.
-      const newKeyValElementForObserver = document.getElementById('key-val');
-      if (newKeyValElementForObserver && newKeyValElementForObserver.parentNode) {
-         obs.observe(newKeyValElementForObserver.parentNode, config);
-      } else {
-         console.warn('JIRA Summary Extension (JP): key-val or parent not found after mutation. Cannot re-observe.');
-      }
+      obs.disconnect();
+      setTimeout(() => {
+        reinitializeSummaryUI(); // This will also update currentJiraKeyForObserver
+
+        let newTargetForReObserve = getElementByXPath(userXPath);
+        if (!newTargetForReObserve) {
+          // Fallback for re-observe
+          const latestKeyValElement = document.getElementById('key-val');
+          if (latestKeyValElement && latestKeyValElement.parentNode) {
+            newTargetForReObserve = latestKeyValElement.parentNode;
+          }
+        }
+
+        if (newTargetForReObserve) {
+          try {
+            obs.observe(newTargetForReObserve, config);
+          } catch (e) {
+            console.error('JIRA Summary Extension (JP): MutationObserver: Error re-observing target.', e, 'Target:', newTargetForReObserve);
+          }
+        } else {
+          console.warn('JIRA Summary Extension (JP): MutationObserver: No valid target found for re-observe. Observer will not be re-started.');
+        }
+      }, 100); // 100ms delay
     }
   };
 
@@ -434,7 +459,6 @@ function observeIssueChanges() {
   }
   observer = new MutationObserver(callback);
   observer.observe(observerTarget, config);
-  console.log('JIRA Summary Extension (JP): Observer started for JIRA issue changes on parent of key-val.');
 }
 
 // --- ボタンのイベントハンドラ ---
