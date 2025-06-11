@@ -101,16 +101,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // 成功: 要約データを送信します。
           sendResponse({ summary: data.data });
         } else {
-          console.error('JIRA Summary Extension (JP): APIからの予期しないデータ構造 (data.dataが見つかりません):', data);
-          // エラー: 予期しないデータ構造の場合。
-          sendResponse({ error: 'APIから予期しないデータ形式（data.dataが見つかりません）で応答がありました。' });
+          console.error('JIRA Summary Extension: Unexpected data structure from API (expected data.data):', data);
+          const originalErrorDetails = 'APIの応答データ形式が予期されたものではありません。';
+          const userMessage = `エラーが発生しました。しばらく時間をおいてから再度お試しください。(詳細: ${originalErrorDetails})`;
+          sendResponse({ error: userMessage });
         }
       })
       .catch(error => {
-        // fetch処理中または他の未処理のPromiseリジェクションでエラーが発生した場合の処理。
-        console.error('JIRA Summary Extension (JP): fetchエラーまたはその他の未処理のPromiseリジェクション:', error && error.message ? error.message : String(error));
-        // content scriptにエラーメッセージを送信します。
-        sendResponse({ error: (error && error.message) || '不明なエラーが発生しました。' });
+        console.error('JIRA Summary Extension: Fetch error or other unhandled promise rejection:', error && error.message ? error.message : String(error));
+        const originalErrorDetails = (error && error.message) || '不明なエラー';
+        const userMessage = `エラーが発生しました。しばらく時間をおいてから再度お試しください。(詳細: ${originalErrorDetails})`;
+        sendResponse({ error: userMessage });
       });
     }
 
