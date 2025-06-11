@@ -10,6 +10,7 @@ let messageAreaContainer = null;
 // 認証が促されたJIRAキーを追跡する変数。
 // これにより、認証後に同じJIRAキーで再試行する際に、バックグラウンドスクリプトに特別なフラグ（authRetry）を送信できます。
 let promptedAuthForJiraKey = null;
+let currentJiraKeyForObserver = null;
 
 // --- ユーティリティ関数 ---
 
@@ -176,12 +177,21 @@ function getJiraKey() {
   return keyValElement.textContent ? keyValElement.textContent.trim() : null;
 }
 
+/**
+ * 現在のURLに 'filter' クエリパラメータが存在するかどうかを確認する関数。
+ * @returns {boolean} 'filter' クエリパラメータが存在する場合はtrue、そうでない場合はfalse。
+ */
+function hasFilterQueryParam() {
+  const urlParams = new URLSearchParams(window.location.search);
+  return urlParams.has('filter');
+}
+
 // --- ボタン作成と管理 ---
 
 /**
  * JIRA要約表示ボタンを作成し、ページに挿入する関数。
  * ボタンが既に存在する場合は再利用し、イベントリスナーを再設定します。
- * ボタンは 'jira-share-trigger' 要素の前に挿入されます。
+ * URLに 'filter' パラメータが存在するかどうかで挿入位置を変更します。
  * @returns {HTMLElement|null} 作成または取得したボタン要素。挿入場所が見つからない場合はnull。
  */
 function createAndInsertSummaryButton() {
@@ -195,18 +205,38 @@ function createAndInsertSummaryButton() {
   button.removeEventListener('click', handleSummaryButtonClick);
   button.addEventListener('click', handleSummaryButtonClick);
 
-  // ボタンの挿入場所となる 'jira-share-trigger' 要素を取得
-  const jiraShareTrigger = document.getElementById('jira-share-trigger');
-  if (jiraShareTrigger && jiraShareTrigger.parentNode) { // 挿入場所とその親要素が存在する場合
-    // ボタンが正しい位置にない場合のみ挿入（既に正しい位置にあれば何もしない）
-    if (button.parentNode !== jiraShareTrigger.parentNode || button.nextSibling !== jiraShareTrigger) {
-        jiraShareTrigger.parentNode.insertBefore(button, jiraShareTrigger); // 'jira-share-trigger'の前にボタンを挿入
+  const isFilterMode = hasFilterQueryParam(); // This function should already be defined from step 1
+
+  if (isFilterMode) {
+    const opsbarTools = document.getElementById('opsbar-jira.issue.tools');
+    if (opsbarTools) {
+      // ボタンが既に opsbarTools の最初の子要素でない場合のみ挿入/移動
+      if (opsbarTools.firstChild !== button) {
+        opsbarTools.prepend(button);
+      }
+    } else {
+      // このケースは checkInterval が正しく機能していれば通常は発生しない
+      console.warn('JIRA Summary Extension (JP): opsbar-jira.issue.tools が見つかりません (フィルターモード)。ボタンを配置できません。');
+      if (button.parentNode) { // Check if button has a parent before trying to remove
+         button.remove(); // ボタンが誤って他の場所に存在すれば削除
+      }
+      return null;
     }
   } else {
-    // 'jira-share-trigger' が見つからない場合、ボタンは配置できない
-    console.warn('JIRA Summary Extension (JP): jira-share-trigger が見つかりません。ボタンを確実に配置できません。');
-    if(button && button.parentNode) button.remove(); // ボタンが既にDOMに追加されていれば削除
-    return null; // ボタンを返さない
+    const jiraShareTrigger = document.getElementById('jira-share-trigger');
+    if (jiraShareTrigger && jiraShareTrigger.parentNode) {
+      // ボタンが jiraShareTrigger の直前にない場合のみ挿入/移動
+      if (button.parentNode !== jiraShareTrigger.parentNode || button.nextSibling !== jiraShareTrigger) {
+          jiraShareTrigger.parentNode.insertBefore(button, jiraShareTrigger);
+      }
+    } else {
+      // このケースは checkInterval が正しく機能していれば通常は発生しない
+      console.warn('JIRA Summary Extension (JP): jira-share-trigger が見つかりません。ボタンを配置できません。');
+      if (button.parentNode) { // Check if button has a parent before trying to remove
+         button.remove(); // ボタンが誤って他の場所に存在すれば削除
+      }
+      return null;
+    }
   }
   return button; // ボタン要素を返す
 }
@@ -293,6 +323,120 @@ function displayHtmlMessage(htmlContent, type = 'info') {
   messageAreaContainer.appendChild(messageDiv);
 }
 
+function reinitializeSummaryUI() {
+  // 1. Remove existing UI elements if they exist
+  const existingButton = document.getElementById(BUTTON_ID);
+  if (existingButton && existingButton.parentNode) {
+    existingButton.remove();
+  }
+  const existingRootContainer = document.getElementById(ROOT_DISPLAY_CONTAINER_ID);
+  if (existingRootContainer && existingRootContainer.parentNode) {
+    existingRootContainer.remove();
+  }
+  messageAreaContainer = null; // Reset messageAreaContainer
+
+  // 2. Setup display insertion point
+  const slackPanel = document.getElementById('slack-viewissue-panel');
+  let displayInsertionPoint = null;
+  if (slackPanel && slackPanel.children[1]) {
+    displayInsertionPoint = slackPanel.children[1];
+  }
+  if (!displayInsertionPoint) {
+    console.error("JIRA Summary Extension (JP): Display insertion point not found during re-initialization.");
+    return;
+  }
+
+  // 3. Determine required anchor for button
+  const isFilterMode = hasFilterQueryParam();
+  const requiredAnchorId = isFilterMode ? 'opsbar-jira.issue.tools' : 'jira-share-trigger';
+  const requiredAnchorElement = document.getElementById(requiredAnchorId);
+
+  if (!requiredAnchorElement) {
+    console.error(`JIRA Summary Extension (JP): Required anchor element '${requiredAnchorId}' not found during re-initialization.`);
+    return;
+  }
+  // Also check for jiraKeyValElement, as its content is used by getJiraKey()
+  const jiraKeyValElement = document.getElementById('key-val');
+  if (!jiraKeyValElement) {
+    console.error("JIRA Summary Extension (JP): key-val element not found during re-initialization.");
+    return;
+  }
+  currentJiraKeyForObserver = jiraKeyValElement.textContent ? jiraKeyValElement.textContent.trim() : null;
+
+
+  // 4. Create and insert root display container
+  let rootDisplayContainer = document.getElementById(ROOT_DISPLAY_CONTAINER_ID); // Re-check, might have been removed
+  if (!rootDisplayContainer) {
+      rootDisplayContainer = document.createElement('div');
+      rootDisplayContainer.id = ROOT_DISPLAY_CONTAINER_ID;
+      displayInsertionPoint.insertAdjacentElement('afterend', rootDisplayContainer);
+  }
+
+
+  // 5. Prepare message area
+  if (!prepareMessageArea()) { // prepareMessageArea will use/create messageAreaContainer inside rootDisplayContainer
+    console.error("JIRA Summary Extension (JP): Message area preparation failed during re-initialization.");
+    return;
+  }
+
+  // 6. Create and insert summary button
+  createAndInsertSummaryButton(); // This function already handles finding the correct anchor
+}
+
+let observer = null; // Keep a reference to the observer
+
+function observeIssueChanges() {
+  const targetNode = document.getElementById('key-val'); // Observe key-val itself or its parent
+  // It's often better to observe a stable parent if key-val itself might be replaced.
+  // Let's assume 'key-val' is stable and its content changes, or it has specific children changing.
+  // A more robust target might be a higher-level container like 'issue-content' or 'stalker' part of Jira's DOM.
+  // For this iteration, let's try a common parent that's likely to contain the issue view.
+  // The element with class "issue-container" or ID "issue-content" is often a good candidate.
+  // If these are not stable, document.body might be a last resort with careful filtering of mutations.
+  // Let's try to observe the element that contains the issue key, assuming it's relatively stable.
+  // A common pattern is that the issue key is within a header.
+  // Let's use `document.querySelector('#jira-issue-header-actions, #jira-issue-header')` or similar.
+  // Given the context, let's assume `key-val`'s parent is a good candidate for observing childList changes.
+  const keyValElementForObserver = document.getElementById('key-val');
+  if (!keyValElementForObserver || !keyValElementForObserver.parentNode) {
+    console.warn('JIRA Summary Extension (JP): Could not find key-val or its parent to observe. Dynamic updates may not work.');
+    return;
+  }
+  const observerTarget = keyValElementForObserver.parentNode; // Observe parent of key-val
+
+  const config = { childList: true, subtree: true };
+
+  const callback = function(mutationsList, obs) {
+    // Check if the JIRA key has actually changed or if our button is missing
+    const newJiraKeyElement = document.getElementById('key-val');
+    const newJiraKey = newJiraKeyElement ? newJiraKeyElement.textContent.trim() : null;
+    const buttonMissing = !document.getElementById(BUTTON_ID);
+
+    if (newJiraKey && (newJiraKey !== currentJiraKeyForObserver || buttonMissing)) {
+      console.log('JIRA Summary Extension (JP): Detected JIRA issue change or missing button, re-initializing UI.');
+      obs.disconnect(); // Temporarily stop observing
+      reinitializeSummaryUI();
+      // Update currentJiraKeyForObserver is now done inside reinitializeSummaryUI
+      // currentJiraKeyForObserver = newJiraKey; // Update after re-init
+      // Re-observe. Target might have changed if key-val's parent was replaced.
+      // It's safer to re-evaluate the target for the observer.
+      const newKeyValElementForObserver = document.getElementById('key-val');
+      if (newKeyValElementForObserver && newKeyValElementForObserver.parentNode) {
+         obs.observe(newKeyValElementForObserver.parentNode, config);
+      } else {
+         console.warn('JIRA Summary Extension (JP): key-val or parent not found after mutation. Cannot re-observe.');
+      }
+    }
+  };
+
+  if (observer) { // Disconnect previous observer if any
+    observer.disconnect();
+  }
+  observer = new MutationObserver(callback);
+  observer.observe(observerTarget, config);
+  console.log('JIRA Summary Extension (JP): Observer started for JIRA issue changes on parent of key-val.');
+}
+
 // --- ボタンのイベントハンドラ ---
 
 /**
@@ -359,7 +503,11 @@ function handleSummaryButtonClick() {
                     chrome.tabs.create({ url: response.redirectUrl, active: true }); // 新しいタブでURLを開く
                     displayError('認証が必要です。新しいタブで認証を完了し、再度「サマリー表示」ボタンを押してください。');
                 } else if (response.error) { // エラーがある場合 (authRetry後の401も含む)
+                  if (typeof response.error === 'string' && response.error.includes('503')) {
+                    displayError('サーバーが一時的に利用できませんでした (503)。しばらく時間をおいてから、再度「サマリー表示」ボタンを押してください。');
+                  } else {
                     displayError(`エラー: ${response.error}`);
+                  }
                 } else if (typeof response.summary !== 'undefined') { // 要約がある場合
                     displaySummary(response.summary);
                 } else {
@@ -377,42 +525,27 @@ function handleSummaryButtonClick() {
 }
 
 // --- メイン実行ロジック ---
-// ページ内の特定要素が表示されるのを待って、拡張機能のUIを初期化するインターバル処理。
+// (currentJiraKeyForObserver global var defined above)
+// (reinitializeSummaryUI function defined above)
+// (observeIssueChanges function defined above)
+
 const checkInterval = setInterval(() => {
-  // 監視対象のJIRAページ要素
-  const jiraKeyValElement = document.getElementById('key-val'); // JIRAキー表示要素
-  const jiraShareTriggerElement = document.getElementById('jira-share-trigger'); // 共有ボタン（ボタン挿入の目印）
-  const slackPanel = document.getElementById('slack-viewissue-panel'); // Slack連携パネル（表示コンテナ挿入の目印）
-
-  let displayInsertionPoint = null; // 拡張機能の表示コンテナを挿入する場所
-  // Slackパネルが存在し、その2番目の子要素があれば、それを挿入ポイントとする
-  // (JIRAのDOM構造に依存するため、変更に弱い可能性あり)
+  const jiraKeyValElement = document.getElementById('key-val');
+  const slackPanel = document.getElementById('slack-viewissue-panel');
+  let displayInsertionPoint = null;
   if (slackPanel && slackPanel.children[1]) {
-      displayInsertionPoint = slackPanel.children[1];
+    displayInsertionPoint = slackPanel.children[1];
   }
 
-  // 必要な要素が全て揃い、かつ表示コンテナの挿入ポイントが見つかった場合
-  if (jiraKeyValElement && jiraShareTriggerElement && displayInsertionPoint) {
-    clearInterval(checkInterval); // インターバルを停止
+  const isFilterMode = hasFilterQueryParam();
+  const requiredAnchorId = isFilterMode ? 'opsbar-jira.issue.tools' : 'jira-share-trigger';
+  const requiredAnchorElement = document.getElementById(requiredAnchorId);
 
-    // ルート表示コンテナ（拡張機能のUI全体を囲む）を取得または作成
-    let rootDisplayContainer = document.getElementById(ROOT_DISPLAY_CONTAINER_ID);
-    if (!rootDisplayContainer) { // まだ存在しない場合
-        rootDisplayContainer = document.createElement('div');
-        rootDisplayContainer.id = ROOT_DISPLAY_CONTAINER_ID;
-        // displayInsertionPointの後にルート表示コンテナを挿入
-        displayInsertionPoint.insertAdjacentElement('afterend', rootDisplayContainer);
-    }
-
-    // メッセージ表示エリアを準備
-    if (!prepareMessageArea()) {
-        console.error("JIRA Summary Extension (JP): 初期セットアップでメッセージエリアの準備に失敗しました。中止します。");
-        return; // 失敗したらここで終了
-    }
-
-    // 要約表示ボタンを作成・挿入
-    createAndInsertSummaryButton();
+  if (jiraKeyValElement && displayInsertionPoint && requiredAnchorElement) {
+    clearInterval(checkInterval);
+    reinitializeSummaryUI(); // Initial UI setup
+    observeIssueChanges();   // Start observing for dynamic changes
   }
-}, 500); // 500ミリ秒ごとにチェック
+}, 500);
 
 [end of content.js]
